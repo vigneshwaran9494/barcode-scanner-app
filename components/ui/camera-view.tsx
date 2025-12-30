@@ -1,4 +1,4 @@
-import { SUPPORTED_BARCODE_TYPES } from '@/constants/constants';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -9,17 +9,24 @@ import {
   useCameraPermission,
   useCodeScanner,
   type Code,
-  type CodeScannerFrame,
+  type CodeType,
 } from 'react-native-vision-camera';
+
+import { SUPPORTED_BARCODE_TYPES } from '@/constants/constants';
+import { BarcodeHistoryService } from '@/services/barcode-history';
+import { BarcodeSettingsService } from '@/services/barcode-settings';
+
+import { useAppState } from '@/hooks/use-app-state';
 import { CameraOverlay } from './camera-overlay';
+import {
+  isValidBarcodeFormat,
+  normalizeBarcodeType,
+} from './camera-utils';
 import { LoadingScreen } from './loading-screen';
 import { NoCameraDeviceError } from './no-camera-device-error';
 import { PermissionRequestScreen } from './permission-request-screen';
 import { ScanResultModal } from './scan-result-modal';
 
-/**
- * Main Camera View Component
- */
 export function CameraView() {
   const { hasPermission, requestPermission } = useCameraPermission();
   const [isInitializing, setIsInitializing] = useState(true);
@@ -29,50 +36,39 @@ export function CameraView() {
   const [showResultModal, setShowResultModal] = useState(false);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isScanning, setIsScanning] = useState(true);
+  const [enabledTypes, setEnabledTypes] = useState<CodeType[]>(SUPPORTED_BARCODE_TYPES);
+  const [validationError, setValidationError] = useState<string | undefined>(undefined);
   const lastScannedValue = useRef<string | null>(null);
   
   const device = useCameraDevice(cameraPosition);
 
-  // Code Scanner Callback
-  const onCodeScanned = useCallback((codes: Code[], frame: CodeScannerFrame) => {
-    if (codes.length > 0 && !showResultModal) {
-      const code = codes[0];
-      
-      // Prevent duplicate scans of the same code
-      if (code.value && code.value !== lastScannedValue.current) {
-        lastScannedValue.current = code.value;
-        setScannedCode(code);
-        setShowResultModal(true);
-        setIsScanning(false);
-        
-        // Haptic Feedback
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
+  const isFocused = useIsFocused()
+  const appState = useAppState()
+  const isActive = useMemo(() => isFocused && appState === "active", [isFocused, appState]);
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const types = await BarcodeSettingsService.getEnabledTypes();
+      setEnabledTypes(types);
+    } catch (error) {
+      console.error('Error loading settings:', error);
     }
-  }, [showResultModal]);
-
-  const codeScanner = useCodeScanner({
-    codeTypes: SUPPORTED_BARCODE_TYPES,
-    onCodeScanned,
-  });
-
-  // Check initial permission state
-  useEffect(() => {
-    const checkPermission = async () => {
-      setIsInitializing(false);
-    };
-    checkPermission();
   }, []);
 
-  // Handle permission request - memoized with useCallback
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSettings();
+    }, [loadSettings]),
+  );
+
   const handleRequestPermission = useCallback(async () => {
     try {
       const result = await requestPermission();
-      if (!result) {
-        setPermissionDenied(true);
-      } else {
-        setPermissionDenied(false);
-      }
+      setPermissionDenied(!result);
     } catch (error) {
       console.error('Error requesting permission:', error);
       setPermissionDenied(true);
@@ -81,18 +77,68 @@ export function CameraView() {
 
   const handleCloseModal = useCallback(() => {
     setShowResultModal(false);
-    // Reset after a delay to allow scanning again
     setTimeout(() => {
       setIsScanning(true);
       lastScannedValue.current = null;
     }, 1000);
   }, []);
 
+  const handleToggleTorch = useCallback(() => {
+    setTorchEnabled((prev) => !prev);
+  }, []);
+
+  // handle code scanned
+  const onCodeScanned = useCallback((codes: Code[]) => {
+    if (codes.length === 0 || showResultModal) return;
+
+    const code = codes[0];
+    if (!code.value || code.value === lastScannedValue.current) return;
+
+    lastScannedValue.current = code.value;
+    const normalized = normalizeBarcodeType(code.type as CodeType, code.value);
+    const validation = isValidBarcodeFormat(normalized.type, normalized.value);
+
+    const normalizedCode: Code = {
+      ...code,
+      type: normalized.type,
+      value: normalized.value,
+    };
+
+    setScannedCode(normalizedCode);
+    setValidationError(validation.isValid ? undefined : validation.error);
+    setShowResultModal(true);
+    setIsScanning(false);
+
+    BarcodeHistoryService.saveBarcode({
+      type: normalized.type,
+      value: normalized.value || '',
+      isValid: validation.isValid,
+      ...(validation.error && { error: validation.error }),
+    }).catch((error) => {
+      console.error('Error saving to history:', error);
+    });
+
+    Haptics.notificationAsync(
+      validation.isValid
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Error,
+    );
+  }, [showResultModal]);
+
+  const codeScanner = useCodeScanner({
+    codeTypes: enabledTypes.length > 0 ? enabledTypes : SUPPORTED_BARCODE_TYPES,
+    onCodeScanned,
+  });
+
+  useEffect(() => {
+    setIsInitializing(false);
+  }, []);
+
   const cameraProps = useMemo(
     () => ({
       style: styles.camera,
       device: device!,
-      isActive: true,
+      isActive,
       enableZoomGesture: true,
       codeScanner,
       torch: (torchEnabled ? 'on' : 'off') as 'on' | 'off',
@@ -117,12 +163,6 @@ export function CameraView() {
     return <NoCameraDeviceError />;
   }
 
-  // Toggle Torch Callback
-  const handleToggleTorch = useCallback(() => {
-    setTorchEnabled((prev) => !prev);
-  }, []);
-
-  // Render the camera view
   return (
     <View style={styles.cameraContainer}>
       <Camera {...cameraProps} />
@@ -134,6 +174,7 @@ export function CameraView() {
       <ScanResultModal
         visible={showResultModal}
         code={scannedCode}
+        validationError={validationError}
         onClose={handleCloseModal}
       />
     </View>

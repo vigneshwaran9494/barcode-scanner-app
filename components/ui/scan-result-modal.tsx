@@ -2,32 +2,31 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import React, { memo, useEffect } from 'react';
+import React, { memo, useCallback, useEffect } from 'react';
 import {
-    Alert,
-    Animated,
-    Clipboard,
-    Dimensions,
-    Linking,
-    Modal,
-    StyleSheet,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  Linking,
+  Modal,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import type { Code } from 'react-native-vision-camera';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface ScanResultModalProps {
   visible: boolean;
   code: Code | null;
+  validationError?: string;
   onClose: () => void;
 }
 
 const ScanResultModalComponent = ({
   visible,
   code,
+  validationError,
   onClose,
 }: ScanResultModalProps) => {
   const colorScheme = useColorScheme();
@@ -62,25 +61,27 @@ const ScanResultModalComponent = ({
     outputRange: [0, 1],
   });
 
-  const handleCopy = async () => {
+  // handle copy to clipboard
+  const handleCopy = useCallback(async () => {
     if (!code?.value) return;
-    
+
     try {
-      Clipboard.setString(code.value);
+      await Clipboard.setStringAsync(code.value);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Copied!', 'Code copied to clipboard');
     } catch (error) {
       Alert.alert('Error', 'Failed to copy to clipboard');
     }
-  };
+  }, [code?.value]);
 
-  const handleOpenUrl = async () => {
+  // handle open url in browser
+  const handleOpenUrl = useCallback(async () => {
     if (!code?.value) return;
-    
+
     const url = code.value.startsWith('http://') || code.value.startsWith('https://')
       ? code.value
       : `https://${code.value}`;
-    
+
     try {
       const canOpen = await Linking.canOpenURL(url);
       if (canOpen) {
@@ -92,12 +93,12 @@ const ScanResultModalComponent = ({
     } catch (error) {
       Alert.alert('Error', 'Failed to open URL');
     }
-  };
+  }, [code?.value]);
 
   const isUrl = code?.value
     ? code.value.startsWith('http://') ||
-      code.value.startsWith('https://') ||
-      code.value.includes('.')
+    code.value.startsWith('https://') ||
+    code.value.includes('.')
     : false;
 
   if (!code) return null;
@@ -138,17 +139,43 @@ const ScanResultModalComponent = ({
                 <View
                   style={[
                     styles.iconContainer,
-                    { backgroundColor: `${tintColor}20` },
+                    {
+                      backgroundColor: validationError
+                        ? `${'#FF3B30'}20`
+                        : `${tintColor}20`,
+                    },
                   ]}
                 >
-                  <ThemedText style={styles.iconText}>✓</ThemedText>
+                  <ThemedText
+                    style={[
+                      styles.iconText,
+                      { color: validationError ? '#FF3B30' : tintColor },
+                    ]}
+                  >
+                    {validationError ? '⚠' : '✓'}
+                  </ThemedText>
                 </View>
                 <ThemedText type="title" style={styles.title}>
-                  Code Scanned!
+                  {validationError ? 'Invalid Barcode' : 'Code Scanned!'}
                 </ThemedText>
                 <ThemedText style={styles.typeText}>
                   Type: {code.type?.toUpperCase() || 'UNKNOWN'}
                 </ThemedText>
+                {validationError && (
+                  <View
+                    style={[
+                      styles.errorContainer,
+                      {
+                        backgroundColor: isDark ? '#3A1F1F' : '#FFEBEE',
+                        borderColor: isDark ? '#4A2F2F' : '#FFCDD2',
+                      },
+                    ]}
+                  >
+                    <ThemedText style={[styles.errorText, { color: '#FF3B30' }]}>
+                      {validationError}
+                    </ThemedText>
+                  </View>
+                )}
               </View>
 
               {/* Content */}
@@ -169,7 +196,7 @@ const ScanResultModalComponent = ({
               {/* Actions */}
               <View style={styles.actionsContainer}>
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: tintColor }]}
+                  style={[styles.actionButton, styles.secondaryButton, { borderColor: tintColor }]}
                   onPress={handleCopy}
                   activeOpacity={0.8}
                 >
@@ -317,6 +344,18 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: 16,
+    fontWeight: '500',
+  },
+  errorContainer: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    width: '100%',
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
     fontWeight: '500',
   },
 });
