@@ -1,9 +1,9 @@
-import React, { memo } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import React, { memo } from 'react';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { openAppSettings } from './camera-utils';
 
 interface PermissionRequestScreenProps {
@@ -17,7 +17,7 @@ const PermissionRequestScreenComponent = ({
 }: PermissionRequestScreenProps) => {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const tintColor = Colors[colorScheme ?? 'light'].tint;
+  const tintColor = useThemeColor({ light: '#0a7ea4', dark: '#fff' }, 'tint');
 
   if (permissionDenied) {
     return (
@@ -73,7 +73,7 @@ const PermissionRequestScreenComponent = ({
         </ThemedText>
 
         <TouchableOpacity
-          style={[styles.permissionButton, { backgroundColor: tintColor }]}
+          style={[styles.permissionButton, { backgroundColor: '#0a7ea4' }]}
           onPress={onRequestPermission}
           activeOpacity={0.8}
         >
