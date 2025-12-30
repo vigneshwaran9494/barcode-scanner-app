@@ -14,6 +14,26 @@ https://github.com/vigneshwaran9494/barcode-scanner-app/raw/refs/heads/main/demo
 - Delete individual or clear all history
 - Dark mode support
 
+## Supported Barcode Formats
+
+### 1D Barcodes
+- **UPC-A** / **UPC-E** - Universal Product Code
+- **EAN-13** / **EAN-8** - European Article Number
+- **Code 128** - High-density alphanumeric
+- **Code 39** - Alphanumeric
+- **Code 93** - Alphanumeric
+- **ITF** / **ITF-14** - Interleaved 2 of 5
+- **Codabar** - Numeric with start/stop characters
+
+### 2D Barcodes
+- **QR Code** - Quick Response code
+- **Data Matrix** - High-density 2D
+- **PDF417** - Portable Data File
+- **Aztec** - High-density 2D
+
+### Platform-Specific
+- **GS1 DataBar** (Expanded/Limited) - iOS only
+
 ## Setup
 
 1. Install dependencies:
